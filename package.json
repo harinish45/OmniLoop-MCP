@@ -1,0 +1,17 @@
+{
+  "name": "@harinish/omniloop-mcp",
+  "version": "1.0.0",
+  "description": "High-performance Model Context Protocol (MCP) server suite connecting LLMs with enterprise systems.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "echo 'MCP test suite ready'"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "author": "Harinish S V <https://github.com/harinish45>",
+  "license": "MIT"
+}
