@@ -1,0 +1,147 @@
+# OmniLoop Gateway Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPORTANT: Never commit real credentials to source control.
+# Use environment variables for all secrets: ${MY_SECRET_ENV_VAR}
+# Copy this file to config/omniloop.yaml and fill in your values.
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: 1
+
+gateway:
+  name: omniloop
+  logLevel: info
+  inbound:
+    - transport: stdio
+    # Uncomment to also expose a Streamable HTTP endpoint:
+    # - transport: streamable-http
+    #   port: 3000
+    #   host: 127.0.0.1
+    #   auth:
+    #     type: bearer
+    #     tokenEnv: GATEWAY_BEARER_TOKEN
+
+servers:
+  # GitHub MCP server (stdio via npx)
+  github:
+    transport: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-github"
+    env:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+    reconnectDelayMs: 2000
+    maxReconnects: 5
+
+  # Filesystem MCP server (stdio via npx) — scoped to /workspace
+  filesystem:
+    transport: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+      - "/workspace"
+    maxReconnects: 3
+
+  # PostgreSQL MCP server (Streamable HTTP — remote)
+  # postgres:
+  #   transport: streamable-http
+  #   url: ${POSTGRES_MCP_URL}
+  #   auth:
+  #     type: bearer
+  #     tokenEnv: POSTGRES_MCP_TOKEN
+
+  # Legacy SSE server (for pre-2026 MCP servers)
+  # legacy-example:
+  #   transport: legacy-sse
+  #   url: ${LEGACY_MCP_URL}
+
+policy:
+  defaults:
+    low:
+      - "read_*"
+      - "list_*"
+      - "get_*"
+      - "search_*"
+      - "describe_*"
+      - "ping_*"
+    medium:
+      - "create_*"
+      - "write_*"
+      - "update_*"
+      - "send_*"
+    high:
+      - "delete_*"
+      - "remove_*"
+    critical:
+      - "destroy_*"
+      - "drop_*"
+      - "truncate_*"
+  overrides:
+    # Example: require confirmation for github issue creation
+    github.create_issue:
+      risk: medium
+      confirmation: required
+      rateLimit:
+        requests: 20
+        windowSeconds: 60
+      timeoutSeconds: 30
+
+verification:
+  maxIterations: 5
+  timeoutSeconds: 300
+  requireConfirmationFor:
+    - destructive
+    - financial
+    - credential
+
+# ── Security Controls ────────────────────────────────────────────────────────
+security:
+  argumentGuard:
+    enabled: true
+    maxDepth: 10
+    maxPayloadBytes: 1048576  # 1MB
+    strictExtraProperties: false
+  secretRedaction:
+    enabled: true
+  idempotency:
+    enabled: true
+    ttlSeconds: 300
+    maxCacheSize: 1000
+  outputScrubbing:
+    enabled: true
+    blockPromptInjection: true
+    stripHtml: true
+
+# ── Response Caching ─────────────────────────────────────────────────────────
+cache:
+  enabled: true
+  defaultTtlSeconds: 60
+  maxEntries: 500
+  perToolTtlSeconds:
+    "github.search_repositories": 120
+
+# ── Resilience & Circuit Breakers ─────────────────────────────────────────────
+resilience:
+  circuitBreaker:
+    failureThreshold: 5
+    windowMs: 60000
+    probeIntervalMs: 30000
+
+# ── Tamper-Evident Audit Logging ──────────────────────────────────────────────
+audit:
+  enabled: true
+  directory: "./logs/audit"
+  retentionDays: 90
+
+# ── Observability & Monitoring ────────────────────────────────────────────────
+observability:
+  prometheus:
+    enabled: false
+    port: 9090
+    host: "127.0.0.1"
+  healthEndpoint:
+    enabled: false
+    port: 3001
+    host: "127.0.0.1"
+

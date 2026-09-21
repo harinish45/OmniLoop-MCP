@@ -1,16 +1,35 @@
 {
   "name": "@harinish/omniloop-mcp",
-  "version": "1.0.0",
-  "description": "High-performance Model Context Protocol (MCP) server suite connecting LLMs with enterprise systems.",
+  "version": "2.0.0",
+  "description": "OmniLoop-MCP Gateway — federated MCP control plane connecting any LLM to many MCP servers through one endpoint.",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "echo 'MCP test suite ready'"
+    "dev": "node --watch dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "js-yaml": "^4.1.0",
+    "pino": "^9.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "author": "Harinish S V <https://github.com/harinish45>",
   "license": "MIT"

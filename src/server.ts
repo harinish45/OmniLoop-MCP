@@ -1,5 +1,6 @@
-import { SystemMetricsTool } from './tools/system_metrics';
-import { TaskRunnerTool } from './tools/task_runner';
+import { SystemMetricsTool } from './tools/system_metrics.js';
+import { TaskRunnerTool } from './tools/task_runner.js';
+
 
 export class OmniLoopMCPServer {
   private registeredTools = new Map<string, Function>();
