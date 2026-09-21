@@ -38,6 +38,12 @@ import { ResponseCache } from './cache/response-cache.js';
 import { MiddlewareBus } from './middleware/middleware-bus.js';
 import { AuditLogger } from './audit/audit-logger.js';
 import { ObservabilityServer } from './observability/prometheus.js';
+import { SandboxGuard } from './security/sandbox.js';
+import { AnomalyDetector } from './security/anomaly-detector.js';
+import { HitlGate } from './security/hitl-gate.js';
+import { RbacManager } from './policy/rbac.js';
+import { ProvenanceSigner } from './security/provenance.js';
+import { ServerLoadBalancer } from './resilience/load-balancer.js';
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -115,6 +121,12 @@ async function main(): Promise<void> {
   const responseCache = new ResponseCache(config.cache);
   const middlewareBus = new MiddlewareBus();
   const auditLogger = new AuditLogger(config.audit);
+  const sandboxGuard = new SandboxGuard(config.security?.sandbox);
+  const anomalyDetector = new AnomalyDetector(config.security?.anomaly);
+  const hitlGate = new HitlGate(config.security?.hitl);
+  const rbacManager = new RbacManager();
+  const provenanceSigner = new ProvenanceSigner(config.security?.provenance);
+  const loadBalancer = new ServerLoadBalancer(serverRegistry);
 
   // Register discovered tools with the argument guard
   for (const entry of toolRegistry.listAll()) {
@@ -134,7 +146,12 @@ async function main(): Promise<void> {
     idempotencyGate,
     responseCache,
     middlewareBus,
-    auditLogger
+    auditLogger,
+    sandboxGuard,
+    anomalyDetector,
+    hitlGate,
+    rbacManager,
+    provenanceSigner
   });
 
   // Optional Prometheus / health observability server

@@ -112,6 +112,30 @@ security:
     enabled: true
     blockPromptInjection: true
     stripHtml: true
+  sandbox:
+    enabled: true
+    allowedPaths:
+      - "c:/workspace"
+    blockPrivateNetworks: true
+    sanitizeShell: true
+  anomaly:
+    enabled: true
+    maxIdenticalCallsInWindow: 5
+    windowMs: 10000
+    maxEntropyThreshold: 5.8
+  hitl:
+    enabled: true
+    mode: auto-approve-safe
+    requiredForRisks:
+      - critical
+    tokenTtlSeconds: 300
+  provenance:
+    enabled: true
+    signingSecret: ${OMNILOOP_PROVENANCE_KEY}
+    gatewayId: "omniloop-v4"
+  rbac:
+    enabled: true
+    defaultRole: admin
 
 # ── Response Caching ─────────────────────────────────────────────────────────
 cache:

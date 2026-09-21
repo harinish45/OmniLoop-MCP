@@ -1,34 +1,34 @@
 # 📋 Product Requirements Document (PRD)
 ## Project: OmniLoop-MCP (Model Context Protocol Enterprise Federation Gateway)
-**Version:** 3.0.0-PROD  
+**Version:** 4.0.0-TITAN-PROD  
 **Owner:** Harinish S V ([@harinish45](https://github.com/harinish45))
 
 ---
 
 ## 1. Product Vision
-OmniLoop-MCP is an enterprise-grade MCP Federation Layer and Security Gateway that provides a unified, hardened endpoint for LLM clients (Claude Desktop, ChatGPT Desktop, Cursor, and Windsurf), federating multiple downstream MCP servers with continuous self-healing verification loops and 9 multi-tier security and resilience layers.
+OmniLoop-MCP Titan Edition is an enterprise-grade MCP Federation Layer and Multi-Tier Security Gateway that provides a unified, impenetrable endpoint for LLM clients (Claude Desktop, ChatGPT Desktop, Cursor, and Windsurf), federating multiple downstream MCP servers with continuous self-healing verification loops and 14 comprehensive execution pipeline stages.
 
-## 2. Federation Architecture
-- **Inbound Transports:** Local `stdio` (IDE and desktop clients) and `streamable-http` (cloud agents and remote workflows).
-- **Downstream Connectors:** `stdio` sub-processes, `streamable-http` remote endpoints, and legacy `SSE` connectors.
-- **Dynamic Namespacing & Discovery:** Discovers tools, resources, and prompt templates, registering them under isolated namespaces (`<server>.<tool>`) while supporting backward-compatible collision-checked bare names.
+## 2. Advanced Security & Defense Layers
+1. **Sandboxing Guard:** Path traversal protection (chroot enforcement, NTFS ADS, UNC, traversal patterns), SSRF private network isolation, and shell command injection sanitizer.
+2. **Semantic Anomaly & Loop-Bomb Detector:** Halts recursive LLM infinite loops and analyzes Shannon payload entropy to prevent exfiltration.
+3. **Human-in-the-Loop (HITL) Gate:** Interactive operator confirmation and cryptographic single-use tokens for high and critical risk operations.
+4. **Multi-Tenant RBAC:** Hierarchical role definitions (`admin`, `operator`, `analyst`, `readonly`, `guest`) and fine-grained capability pattern matching.
+5. **Cryptographic Payload Provenance:** Digitally signs all tool outputs with HMAC-SHA256 signatures to prevent tampering in multi-agent environments.
+6. **Schema Synthesizer & Auto-Healing:** Automatic type coercion for LLM parameter serialization anomalies.
+7. **Multi-Server Load Balancer:** Supports failover, round-robin, and random pools across federated server replicas.
+8. **Tamper-Evident Audit Logging:** Append-only JSONL logging featuring SHA-256 chain hashing from genesis.
+9. **Circuit Breakers:** Per-connector fault isolation with automatic recovery probing.
+10. **Output Scrubber:** Defense-in-depth scanner blocking prompt injection strings, jailbreak tokens, and HTML tags.
 
-## 3. Request Pipeline & Guardrails
-1. **Trace ID & Inbound Authentication:** Distributed trace assignment (`x-trace-id`) and API-key / Bearer token validation.
-2. **Policy & Rate Limiting:** Configurable rate limits with sliding-window token buckets and risk categorization (`low`, `medium`, `high`, `critical`).
-3. **Argument Guard:** AJV-powered JSON schema conformance, maximum depth limiting (`10`), payload byte limiting (`1MB`), and prevention of property injection.
-4. **Idempotency Gate:** LRU deduplication with deterministic hashing to prevent unintended duplicate tool execution.
-5. **Middleware Bus:** Extensible hook bus supporting `before`, `after`, and `onError` hooks with fallback capabilities.
-6. **Response Cache:** In-memory TTL caching for read-only tools with sorted key hashing and stale-while-revalidate protection.
-7. **Verification & Recovery Loop:** Autonomous retry and recovery loop with configurable thresholds.
-8. **Output Scrubber:** Defense-in-depth scanner blocking prompt injection strings, jailbreak tokens, and HTML script/iframe tags.
-9. **Tamper-Evident Audit Logging:** Append-only JSONL logging featuring continuous SHA-256 chain hashing.
-10. **Circuit Breakers:** Per-connector state machine (`CLOSED` ➔ `OPEN` ➔ `HALF_OPEN`) preventing cascading latency and server hangs.
-
-## 4. Desktop Integration Support
+## 3. Desktop Integration Support
 - Auto-detecting CLI installers for **Claude Desktop** (`claude_desktop_config.json`) and **ChatGPT Desktop** (`mcp_servers.json`) across Windows, macOS, and Linux.
-- Cursor IDE `.cursor/mcp.json` generator.
+- Cursor IDE `.cursor/mcp.json` support.
+
+## 4. Diagnostics CLI
+- `npx omniloop doctor`: Verifies Node environment, configuration schemas, and server health.
+- `npx omniloop audit verify`: Verifies cryptographic SHA-256 chain integrity of audit logs.
+- `npx omniloop benchmark`: Benchmarks pipeline throughput and latency.
 
 ## 5. Verification & Quality Gates
-- **100% Type-Safe:** Clean TypeScript 5 compilation with zero `tsc` warnings.
-- **Vitest Suite:** 81 passing unit and integration tests across all policy, security, registry, routing, cache, resilience, audit, and installer components.
+- **Strict TypeScript 5:** Zero `tsc` compilation warnings or errors.
+- **Vitest Suite:** 115 passing unit and integration tests across 23 test files.

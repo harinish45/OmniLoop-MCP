@@ -36,6 +36,12 @@ import { ToolRouter } from '../routing/tool-router.js';
 import type { ArgumentGuard } from '../security/argument-guard.js';
 import type { SecretRedactor } from '../security/secret-redactor.js';
 import type { OutputScrubber } from '../security/output-scrubber.js';
+import type { SandboxGuard } from '../security/sandbox.js';
+import type { AnomalyDetector } from '../security/anomaly-detector.js';
+import type { HitlGate } from '../security/hitl-gate.js';
+import type { RbacManager } from '../policy/rbac.js';
+import type { ProvenanceSigner } from '../security/provenance.js';
+import { SchemaSynthesizer } from '../resilience/schema-synthesizer.js';
 import { IdempotencyGate } from '../security/idempotency.js';
 import { ResponseCache } from '../cache/response-cache.js';
 import type { MiddlewareBus, MiddlewareContext } from '../middleware/middleware-bus.js';
@@ -59,6 +65,11 @@ export interface GatewayDeps {
   responseCache: ResponseCache;
   middlewareBus: MiddlewareBus;
   auditLogger: AuditLogger;
+  sandboxGuard?: SandboxGuard;
+  anomalyDetector?: AnomalyDetector;
+  hitlGate?: HitlGate;
+  rbacManager?: RbacManager;
+  provenanceSigner?: ProvenanceSigner;
 }
 
 export class OmniLoopGateway {
@@ -121,8 +132,59 @@ export class OmniLoopGateway {
           logger.warn({ traceId, toolName, risk: authResult.risk }, 'High-risk tool — confirmation required (log-only in this phase)');
         }
 
+        // ── [1b] RBAC CHECK ───────────────────────────────────────────────────
+        if (this.deps.rbacManager) {
+          const tenant = this.deps.rbacManager.getTenant('default');
+          const rbacResult = this.deps.rbacManager.canExecuteTool(tenant, toolName, authResult.risk);
+          if (!rbacResult.allowed) {
+            logger.warn({ traceId, toolName, reason: rbacResult.reason }, 'RBAC denied tool call');
+            return { content: [{ type: 'text' as const, text: `RBAC Denied: ${rbacResult.reason}` }], isError: true };
+          }
+        }
+
+        // ── [1c] ANOMALY & LOOP-BOMB DETECTION ─────────────────────────────────
+        if (this.deps.anomalyDetector) {
+          const anomalyResult = this.deps.anomalyDetector.evaluate(toolName, args);
+          if (anomalyResult.anomalous) {
+            const reason = anomalyResult.reasons.join('; ');
+            logger.error({ traceId, toolName, reason }, 'Call blocked by Anomaly Detector');
+            return { content: [{ type: 'text' as const, text: `Anomaly Block: ${reason}` }], isError: true };
+          }
+        }
+
+        // ── [1d] SCHEMA SYNTHESIS & COERCION ───────────────────────────────────
+        const entry = this.deps.toolRegistry.resolve(toolName);
+        const serverId = entry?.serverId ?? 'unknown';
+        const coercedArgs = SchemaSynthesizer.coerceArguments(
+          (args ?? {}) as Record<string, unknown>,
+          entry?.definition.inputSchema
+        );
+
+        // ── [1e] SANDBOX BOUNDARY & SSRF CHECK ────────────────────────────────
+        if (this.deps.sandboxGuard) {
+          const sandboxResult = this.deps.sandboxGuard.validate(coercedArgs);
+          if (!sandboxResult.allowed) {
+            const reason = sandboxResult.violations.join('; ');
+            logger.warn({ traceId, toolName, reason }, 'Call blocked by Sandbox Guard');
+            return { content: [{ type: 'text' as const, text: `Sandbox Violation: ${reason}` }], isError: true };
+          }
+        }
+
+        // ── [1f] HUMAN-IN-THE-LOOP (HITL) GATE ─────────────────────────────────
+        if (this.deps.hitlGate) {
+          const confirmToken = (coercedArgs as Record<string, unknown>)?._confirmToken as string | undefined;
+          const hitlResult = await this.deps.hitlGate.checkApproval(
+            { toolName, args: coercedArgs, riskLevel: authResult.risk, traceId },
+            confirmToken
+          );
+          if (!hitlResult.approved) {
+            logger.warn({ traceId, toolName, reason: hitlResult.reason }, 'Call halted by HITL Gate');
+            return { content: [{ type: 'text' as const, text: `HITL Required: ${hitlResult.reason}` }], isError: true };
+          }
+        }
+
         // ── [3] ARGUMENT GUARD ────────────────────────────────────────────────
-        const guardResult = this.deps.argumentGuard.validate(toolName, args);
+        const guardResult = this.deps.argumentGuard.validate(toolName, coercedArgs);
         if (!guardResult.valid) {
           const reason = `Invalid arguments: ${guardResult.errors.join('; ')}`;
           logger.warn({ traceId, toolName, errors: guardResult.errors }, 'Argument validation failed');
@@ -130,7 +192,7 @@ export class OmniLoopGateway {
         }
 
         // ── [4] IDEMPOTENCY CHECK ─────────────────────────────────────────────
-        const idempotencyKey = IdempotencyGate.generateKey(toolName, args);
+        const idempotencyKey = IdempotencyGate.generateKey(toolName, coercedArgs);
         const idempotencyCached = this.deps.idempotencyGate.check(idempotencyKey);
         if (idempotencyCached) {
           logger.info({ traceId, toolName }, 'Idempotency cache hit — returning cached result');
@@ -138,11 +200,9 @@ export class OmniLoopGateway {
         }
 
         // ── [5] MIDDLEWARE BEFORE ─────────────────────────────────────────────
-        const entry = this.deps.toolRegistry.resolve(toolName);
-        const serverId = entry?.serverId ?? 'unknown';
         const mwCtx: MiddlewareContext = {
           traceId, toolName, serverId,
-          riskLevel: authResult.risk, args, meta: {}, startedAt
+          riskLevel: authResult.risk, args: coercedArgs, meta: {}, startedAt
         };
 
         try {
@@ -154,7 +214,7 @@ export class OmniLoopGateway {
         // ── [6] RESPONSE CACHE ────────────────────────────────────────────────
         let cacheHit = false;
         if (authResult.risk === 'low') {
-          const cacheKey = ResponseCache.makeKey(serverId, toolName, args);
+          const cacheKey = ResponseCache.makeKey(serverId, toolName, coercedArgs);
           const cached = this.deps.responseCache.get(cacheKey);
           if (cached) {
             cacheHit = true;
@@ -218,7 +278,7 @@ export class OmniLoopGateway {
         // ── [11] AUDIT LOG ────────────────────────────────────────────────────
         this.deps.auditLogger.write({
           traceId, timestamp: new Date().toISOString(), toolName, serverId,
-          args: this.deps.secretRedactor.redactForLogging(args),
+          args: this.deps.secretRedactor.redactForLogging(coercedArgs),
           resultSummary: finalResult.isError
             ? `ERROR: ${loopResult.failureReason ?? 'tool error'}`
             : `OK (${loopResult.iterations} iterations)`,
@@ -228,7 +288,12 @@ export class OmniLoopGateway {
           cacheHit, idempotencyHit: false, threatDetected: threats.length > 0, threats
         });
 
-        return this.toSdkResult(finalResult);
+        // ── [12] CRYPTOGRAPHIC PROVENANCE SIGNING ──────────────────────────────
+        const signedResult = this.deps.provenanceSigner
+          ? this.deps.provenanceSigner.signResult(finalResult, toolName, traceId)
+          : finalResult;
+
+        return this.toSdkResult(signedResult);
       });
     });
 

@@ -144,6 +144,33 @@ export const SecurityConfigSchema = z.object({
     enabled: z.boolean().default(true),
     blockPromptInjection: z.boolean().default(true),
     stripHtml: z.boolean().default(true)
+  }).optional(),
+  sandbox: z.object({
+    enabled: z.boolean().default(true),
+    allowedPaths: z.array(z.string()).default([]),
+    blockPrivateNetworks: z.boolean().default(true),
+    sanitizeShell: z.boolean().default(true)
+  }).optional(),
+  anomaly: z.object({
+    enabled: z.boolean().default(true),
+    maxIdenticalCallsInWindow: z.number().int().positive().default(5),
+    windowMs: z.number().int().positive().default(10_000),
+    maxEntropyThreshold: z.number().default(5.8)
+  }).optional(),
+  hitl: z.object({
+    enabled: z.boolean().default(true),
+    mode: z.enum(['token', 'callback', 'auto-approve-safe']).default('auto-approve-safe'),
+    requiredForRisks: z.array(z.enum(['low', 'medium', 'high', 'critical'])).default(['critical']),
+    tokenTtlSeconds: z.number().int().positive().default(300)
+  }).optional(),
+  provenance: z.object({
+    enabled: z.boolean().default(true),
+    signingSecret: z.string().default('omniloop-provenance-default-key-change-in-production'),
+    gatewayId: z.string().default('omniloop-v4')
+  }).optional(),
+  rbac: z.object({
+    enabled: z.boolean().default(true),
+    defaultRole: z.enum(['admin', 'operator', 'analyst', 'readonly', 'guest']).default('admin')
   }).optional()
 });
 export type SecurityConfig = z.infer<typeof SecurityConfigSchema>;
