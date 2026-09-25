@@ -15,6 +15,12 @@ interface Bucket {
   config: RateLimitConfig;
 }
 
+export interface RateLimitCheckResult {
+  allowed: boolean;
+  remainingTokens: number;
+  retryAfterMs?: number;
+}
+
 export class RateLimiter {
   /** Key: "serverId.toolName" */
   private readonly _buckets = new Map<string, Bucket>();
@@ -43,9 +49,9 @@ export class RateLimiter {
    *
    * @param serverId  Server ID
    * @param toolName  Bare tool name
-   * @returns  true if call is allowed, false if rate-limited
+   * @returns         RateLimitCheckResult with allowed flag and retry info
    */
-  check(serverId: string, toolName: string): boolean {
+  check(serverId: string, toolName: string): RateLimitCheckResult {
     const key = `${serverId}.${toolName}`;
     let bucket = this._buckets.get(key);
 
@@ -70,12 +76,24 @@ export class RateLimiter {
     }
 
     if (bucket.tokens <= 0) {
-      logger.warn({ key, remaining: 0 }, 'Rate limit exceeded');
-      return false;
+      const retryAfterMs = windowMs - elapsed;
+      logger.warn({ key, remaining: 0, retryAfterMs }, 'Rate limit exceeded');
+      return { allowed: false, remainingTokens: 0, retryAfterMs };
     }
 
     bucket.tokens--;
-    return true;
+    return { allowed: true, remainingTokens: bucket.tokens };
+  }
+
+  /**
+   * Check rate limit and throw if exceeded.
+   * Convenience method for callers that prefer exception-based flow.
+   */
+  checkOrThrow(serverId: string, toolName: string): void {
+    const result = this.check(serverId, toolName);
+    if (!result.allowed) {
+      throw new Error(`RATE_LIMIT_EXCEEDED: Rate limit exceeded for "${serverId}.${toolName}". Retry in ${Math.ceil((result.retryAfterMs ?? 0) / 1000)}s`);
+    }
   }
 
   /** Returns remaining tokens for a tool (for status/debug) */

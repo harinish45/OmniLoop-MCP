@@ -4,14 +4,15 @@
  * Startup sequence:
  *   1. Load + validate config (omniloop.yaml)
  *   2. Initialize observability (logger, metrics)
- *   3. Build connector for each configured server
- *   4. Register connectors in server registry
- *   5. Connect all downstream servers
- *   6. Run initial discovery (tools/resources/prompts)
- *   7. Start health polling
- *   8. Initialize policy engine
- *   9. Start inbound MCP gateway (stdio by default)
- *  10. Register SIGINT/SIGTERM handlers
+ *   3. Initialize storage backend (memory/Redis)
+ *   4. Build connector for each configured server
+ *   5. Register connectors in server registry
+ *   6. Connect all downstream servers
+ *   7. Run initial discovery (tools/resources/prompts)
+ *   8. Start health polling
+ *   9. Initialize policy engine
+ *  10. Start inbound MCP gateway (stdio by default)
+ *  11. Register SIGINT/SIGTERM handlers
  */
 
 import * as path from 'path';
@@ -44,6 +45,8 @@ import { HitlGate } from './security/hitl-gate.js';
 import { RbacManager } from './policy/rbac.js';
 import { ProvenanceSigner } from './security/provenance.js';
 import { ServerLoadBalancer } from './resilience/load-balancer.js';
+import { createStorageBackend } from './storage/index.js';
+import type { StorageBackend } from './storage/backend.js';
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -58,19 +61,22 @@ async function main(): Promise<void> {
 
   logger.info({ name: config.gateway.name, servers: Object.keys(config.servers) }, 'OmniLoop Gateway starting');
 
-  // 3. Build registries
+  // 3. Initialize storage backend
+  const storage: StorageBackend = await createStorageBackend(config.storage);
+
+  // 4. Build registries
   const serverRegistry = new ServerRegistry();
   const toolRegistry = new ToolRegistry();
   const resourceRegistry = new ResourceRegistry();
   const promptRegistry = new PromptRegistry();
 
-  // 4. Build connectors
+  // 5. Build connectors
   for (const [serverId, serverConfig] of Object.entries(config.servers)) {
     const connector = buildConnector(serverId, serverConfig);
     serverRegistry.register(connector);
   }
 
-  // 5. Connect all servers (parallel, individual failures isolated)
+  // 6. Connect all servers (parallel, individual failures isolated)
   const connectResults = await Promise.allSettled(
     serverRegistry.listAll().map(async ({ connector, serverId }) => {
       try {
@@ -87,13 +93,13 @@ async function main(): Promise<void> {
   const connectedCount = connectResults.filter((r) => r.status === 'fulfilled').length;
   logger.info({ connectedCount, total: serverRegistry.size }, 'Connection phase complete');
 
-  // 6. Initial discovery
+  // 7. Initial discovery
   const discovery = new DiscoveryService(serverRegistry, toolRegistry, resourceRegistry, promptRegistry);
   await discovery.discoverAll();
 
   logger.info({ totalTools: toolRegistry.size }, 'Discovery complete');
 
-  // 7. Health polling (every 30s)
+  // 8. Health polling (every 30s)
   serverRegistry.startHealthPolling(30_000);
 
   // Re-discover tools when a server recovers from offline
@@ -110,10 +116,10 @@ async function main(): Promise<void> {
     }
   });
 
-  // 8. Policy engine
+  // 9. Policy engine
   const authService = new AuthorizationService(toolRegistry, config.policy);
 
-  // 9. Instantiate security, cache, middleware, and audit layers
+  // 10. Instantiate security, cache, middleware, and audit layers
   const argumentGuard = new ArgumentGuard(config.security?.argumentGuard);
   const secretRedactor = new SecretRedactor(config.security?.secretRedaction);
   const outputScrubber = new OutputScrubber(config.security?.outputScrubbing);
@@ -133,7 +139,7 @@ async function main(): Promise<void> {
     argumentGuard.registerTool(entry.namespacedName, entry.definition);
   }
 
-  // 10. Start gateway with all federated layers
+  // 11. Start gateway with all federated layers
   const gateway = new OmniLoopGateway({
     toolRegistry,
     resourceRegistry,
@@ -170,7 +176,7 @@ async function main(): Promise<void> {
     );
   }
 
-  // 11. Lifecycle + signal handlers
+  // 12. Lifecycle + signal handlers
   const lifecycle = new GatewayLifecycle(serverRegistry);
 
   lifecycle.registerSignalHandlers(async () => {
@@ -181,6 +187,7 @@ async function main(): Promise<void> {
     }
     await gateway.stop();
     await lifecycle.disconnectAll();
+    await storage.close();
   });
 
   // Start inbound transport

@@ -17,6 +17,7 @@ import type {
 } from './connector.js';
 import type { ServerConfig } from '../config/schema.js';
 import { createLogger } from '../observability/logging.js';
+import { Agent } from 'undici';
 
 type StreamableHttpServerConfig = Extract<ServerConfig, { transport: 'streamable-http' }>;
 
@@ -28,10 +29,22 @@ export class StreamableHttpConnector implements MCPConnector {
   private readonly config: StreamableHttpServerConfig;
   private client: Client | null = null;
   private _isConnected = false;
+  private readonly dispatcher: Agent;
 
   constructor(serverId: string, config: StreamableHttpServerConfig) {
     this.serverId = serverId;
     this.config = config;
+
+    // Create undici Agent for connection pooling
+    const poolSize = config.connectionPoolSize ?? 10;
+    this.dispatcher = new Agent({
+      connections: poolSize,
+      keepAliveTimeout: 30_000,
+      keepAliveMaxTimeout: 60_000,
+      pipelining: 0
+    });
+
+    logger.debug({ serverId: this.serverId, poolSize }, 'HTTP connector initialized with connection pool');
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -62,9 +75,37 @@ export class StreamableHttpConnector implements MCPConnector {
       }
     }
 
+    // Custom fetch with connection pooling
+    const customFetch = async (url: string | URL, init?: RequestInit): Promise<Response> => {
+      const urlObj = new URL(url);
+      const res = await this.dispatcher.request({
+        method: (init?.method ?? 'GET') as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS',
+        path: urlObj.pathname + urlObj.search,
+        headers: { ...headers, ...init?.headers } as Record<string, string>,
+        body: init?.body as string | undefined,
+        origin: urlObj.origin
+      });
+
+      // Convert undici response to standard Response
+      const responseHeaders = new Headers();
+      for (const [key, value] of Object.entries(res.headers)) {
+        if (Array.isArray(value)) {
+          responseHeaders.set(key, value.join(', '));
+        } else if (value !== undefined) {
+          responseHeaders.set(key, value);
+        }
+      }
+
+      return new Response(res.body as unknown as BodyInit, {
+        status: res.statusCode,
+        statusText: res.headers['status-text'] as string ?? 'OK',
+        headers: responseHeaders
+      });
+    };
+
     const transport = new StreamableHTTPClientTransport(
       new URL(this.config.url),
-      { requestInit: { headers } }
+      { requestInit: { headers }, fetch: customFetch }
     );
 
     this.client = new Client(
@@ -84,6 +125,7 @@ export class StreamableHttpConnector implements MCPConnector {
       await this.client.close();
       this.client = null;
     }
+    await this.dispatcher.close();
     logger.info({ serverId: this.serverId }, 'HTTP connector disconnected');
   }
 

@@ -86,34 +86,50 @@ export class MiddlewareBus {
   }
 
   /**
-   * Run all BEFORE hooks.
+   * Run all BEFORE hooks in parallel.
    * If any hook throws, the error propagates and the call is aborted.
    */
   async runBefore(ctx: MiddlewareContext): Promise<void> {
-    for (const mw of this.collectFor(ctx.toolName)) {
-      if (mw.before) {
-        try {
-          await mw.before(ctx);
-        } catch (err) {
-          logger.error({ middleware: mw.name, tool: ctx.toolName, err }, 'Before middleware threw');
-          throw err;
-        }
+    const middlewares = this.collectFor(ctx.toolName).filter((mw) => mw.before);
+    if (middlewares.length === 0) return;
+
+    const results = await Promise.allSettled(
+      middlewares.map((mw) => mw.before!(ctx))
+    );
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (!result) continue;
+      if (result.status === 'rejected') {
+        const rejectedResult = result as PromiseRejectedResult;
+        const reason = rejectedResult.reason;
+        const mwName = middlewares[i]?.name ?? 'unknown';
+        logger.error({ middleware: mwName, tool: ctx.toolName, err: reason }, 'Before middleware threw');
+        throw reason;
       }
     }
   }
 
   /**
-   * Run all AFTER hooks.
+   * Run all AFTER hooks in parallel.
    * Errors in after hooks are logged but do NOT abort result delivery.
    */
   async runAfter(ctx: MiddlewareContext): Promise<void> {
-    for (const mw of this.collectFor(ctx.toolName)) {
-      if (mw.after) {
-        try {
-          await mw.after(ctx);
-        } catch (err) {
-          logger.error({ middleware: mw.name, tool: ctx.toolName, err }, 'After middleware threw — continuing');
-        }
+    const middlewares = this.collectFor(ctx.toolName).filter((mw) => mw.after);
+    if (middlewares.length === 0) return;
+
+    const results = await Promise.allSettled(
+      middlewares.map((mw) => mw.after!(ctx))
+    );
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (!result) continue;
+      if (result.status === 'rejected') {
+        const rejectedResult = result as PromiseRejectedResult;
+        const reason = rejectedResult.reason;
+        const mwName = middlewares[i]?.name ?? 'unknown';
+        logger.error({ middleware: mwName, tool: ctx.toolName, err: reason }, 'After middleware threw — continuing');
       }
     }
   }

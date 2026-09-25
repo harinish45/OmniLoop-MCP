@@ -98,7 +98,8 @@ export const StreamableHttpServerConfigSchema = z.object({
   transport: z.literal('streamable-http'),
   url: z.string().url(),
   auth: AuthConfigSchema.optional(),
-  timeoutMs: z.number().int().positive().default(30000)
+  timeoutMs: z.number().int().positive().default(30000),
+  connectionPoolSize: z.number().int().positive().default(10)
 });
 
 export const LegacySseServerConfigSchema = z.object({
@@ -221,6 +222,20 @@ export const ObservabilityConfigSchema = z.object({
 });
 export type ObservabilityConfig = z.infer<typeof ObservabilityConfigSchema>;
 
+// ── Storage config ──────────────────────────────────────────────────────────────
+
+export const StorageConfigSchema = z.object({
+  type: z.enum(['memory', 'redis']).default('memory'),
+  redis: z.object({
+    url: z.string().url().default('redis://127.0.0.1:6379'),
+    keyPrefix: z.string().default('omniloop:'),
+    connectionPoolSize: z.number().int().positive().default(10),
+    maxRetries: z.number().int().positive().default(3),
+    retryDelayMs: z.number().int().positive().default(100)
+  }).optional()
+});
+export type StorageConfig = z.infer<typeof StorageConfigSchema>;
+
 // ── Root config ───────────────────────────────────────────────────────────────
 
 export const OmniLoopConfigSchema = z.object({
@@ -233,6 +248,7 @@ export const OmniLoopConfigSchema = z.object({
   cache: CacheConfigSchema.optional(),
   resilience: ResilienceConfigSchema.optional(),
   audit: AuditConfigSchema.optional(),
-  observability: ObservabilityConfigSchema.optional()
+  observability: ObservabilityConfigSchema.optional(),
+  storage: StorageConfigSchema.optional()
 });
 export type OmniLoopConfig = z.infer<typeof OmniLoopConfigSchema>;

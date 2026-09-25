@@ -14,7 +14,7 @@
 import type { ToolRegistry } from '../registry/tool-registry.js';
 import type { PolicyConfig } from '../config/schema.js';
 import { resolveRisk, type RiskLevel } from './permissions.js';
-import { RateLimiter } from './rate-limit.js';
+import { RateLimiter, type RateLimitCheckResult } from './rate-limit.js';
 import { createLogger } from '../observability/logging.js';
 
 const logger = createLogger('authorization');
@@ -90,12 +90,13 @@ export class AuthorizationService {
     }
 
     // 3. Rate limit check
-    if (!this.rateLimiter.check(serverId, bareName)) {
+    const rateLimitResult: RateLimitCheckResult = this.rateLimiter.check(serverId, bareName);
+    if (!rateLimitResult.allowed) {
       return {
         allowed: false,
         risk: 'low',
         confirmationRequired: false,
-        reason: `Rate limit exceeded for "${namespacedName}"`,
+        reason: `Rate limit exceeded for "${namespacedName}" (retry in ${Math.ceil((rateLimitResult.retryAfterMs ?? 0) / 1000)}s)`,
         timeoutMs: 0
       };
     }

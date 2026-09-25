@@ -41,6 +41,8 @@ interface CacheEntry {
 
 export class ResponseCache {
   private readonly _store = new Map<string, CacheEntry>();
+  /** Reverse index: serverId -> Set of cache keys for O(1) invalidation */
+  private readonly _serverIndex = new Map<string, Set<string>>();
   private readonly config: CacheConfig;
 
   /** Metrics */
@@ -91,7 +93,7 @@ export class ResponseCache {
 
   /**
    * Store a result in the cache.
-   * @param namespacedTool  Used for per-tool TTL lookup
+   * @param namespacedTool  Used for per-tool TTL lookup and server index
    */
   set(key: string, namespacedTool: string, result: ToolResult): void {
     if (!this.config.enabled) return;
@@ -103,7 +105,7 @@ export class ResponseCache {
     if (this._store.size >= this.config.maxEntries) {
       const oldest = this._store.keys().next().value;
       if (oldest) {
-        this._store.delete(oldest);
+        this._deleteKey(oldest);
         this._evictions++;
       }
     }
@@ -116,16 +118,41 @@ export class ResponseCache {
       cachedAt: new Date()
     });
 
+    // Maintain server index for granular invalidation
+    const serverId = namespacedTool.split('.')[0];
+    if (!serverId) return;
+    if (!this._serverIndex.has(serverId)) {
+      this._serverIndex.set(serverId, new Set());
+    }
+    this._serverIndex.get(serverId)!.add(key);
+
     logger.debug({ key, namespacedTool, ttlMs: ttl }, 'Response cached');
+  }
+
+  /** Internal helper to delete a key and clean up server index */
+  private _deleteKey(key: string): void {
+    // Find and remove from server index
+    for (const [serverId, keys] of this._serverIndex.entries()) {
+      if (keys.delete(key)) {
+        if (keys.size === 0) {
+          this._serverIndex.delete(serverId);
+        }
+        break;
+      }
+    }
+    this._store.delete(key);
   }
 
   /** Invalidate all entries for a server (called when server reconnects) */
   invalidateServer(serverId: string): void {
-    // Keys are hashes — we can't filter by serverId directly.
-    // For exact invalidation, maintain a serverId→keys index.
-    // For now: clear all (conservative but safe on reconnect).
-    this._store.clear();
-    logger.info({ serverId }, 'Response cache cleared for server');
+    const keys = this._serverIndex.get(serverId);
+    if (keys) {
+      for (const key of keys) {
+        this._store.delete(key);
+      }
+      this._serverIndex.delete(serverId);
+      logger.info({ serverId, invalidated: keys.size }, 'Response cache invalidated for server');
+    }
   }
 
   /** Remove all expired entries */
@@ -134,7 +161,7 @@ export class ResponseCache {
     let removed = 0;
     for (const [key, entry] of this._store.entries()) {
       if (now > entry.expiresAt) {
-        this._store.delete(key);
+        this._deleteKey(key);
         removed++;
       }
     }

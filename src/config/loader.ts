@@ -1,12 +1,13 @@
 /**
  * Config loader — reads omniloop.yaml, substitutes ${ENV_VAR} references,
- * and validates the result against the Zod schema.
+ * merges with centralized defaults, and validates the result against the Zod schema.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { OmniLoopConfigSchema, type OmniLoopConfig } from './schema.js';
+import { ALL_DEFAULTS, mergeWithDefaults } from './defaults.js';
 
 /** Regex matching ${VAR_NAME} placeholders */
 const ENV_VAR_PATTERN = /\$\{([A-Z0-9_]+)\}/g;
@@ -22,7 +23,7 @@ function substituteEnvVars(value: unknown, context: string): unknown {
       const envValue = process.env[varName];
       if (envValue === undefined) {
         throw new Error(
-          `Config error at "${context}": environment variable $\{${varName}\} is not set`
+          `Config error at "${context}": environment variable \${${varName}} is not set`
         );
       }
       return envValue;
@@ -70,7 +71,10 @@ export function loadConfig(configPath: string): OmniLoopConfig {
   // Substitute environment variable references before schema validation
   const substituted = substituteEnvVars(parsed, 'root');
 
-  const result = OmniLoopConfigSchema.safeParse(substituted);
+  // Merge user config with centralized defaults
+  const merged = mergeWithDefaults(substituted as Partial<OmniLoopConfig>, ALL_DEFAULTS);
+
+  const result = OmniLoopConfigSchema.safeParse(merged);
   if (!result.success) {
     const issues = result.error.issues
       .map((issue) => `  • ${issue.path.join('.')}: ${issue.message}`)

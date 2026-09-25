@@ -11,6 +11,7 @@
  */
 
 import { createLogger } from '../observability/logging.js';
+import { CircuitBreakerOpenError } from '../errors/gateway-errors.js';
 
 const logger = createLogger('circuit-breaker');
 
@@ -54,7 +55,7 @@ export class CircuitBreaker {
 
   /**
    * Check if a call is allowed.
-   * Throws BreakerOpenError if in OPEN state and probe interval hasn't elapsed.
+   * Throws CircuitBreakerOpenError if in OPEN state and probe interval hasn't elapsed.
    * Returns 'probe' if this call should be treated as a half-open probe.
    */
   allowCall(): 'allowed' | 'probe' {
@@ -71,7 +72,7 @@ export class CircuitBreaker {
           this.probeInFlight = true;
           return 'probe';
         }
-        throw new BreakerOpenError(
+        throw new CircuitBreakerOpenError(
           this.serverId,
           Math.max(0, this.config.probeIntervalMs - elapsed)
         );
@@ -83,7 +84,7 @@ export class CircuitBreaker {
           this.probeInFlight = true;
           return 'probe';
         }
-        throw new BreakerOpenError(this.serverId, this.config.probeIntervalMs);
+        throw new CircuitBreakerOpenError(this.serverId, this.config.probeIntervalMs);
     }
   }
 
@@ -149,19 +150,6 @@ export class CircuitBreaker {
   private pruneOldFailures(): void {
     const cutoff = Date.now() - this.config.windowMs;
     this.failureTimes = this.failureTimes.filter((t) => t >= cutoff);
-  }
-}
-
-export class BreakerOpenError extends Error {
-  constructor(
-    public readonly serverId: string,
-    public readonly retryAfterMs: number
-  ) {
-    super(
-      `Circuit breaker OPEN for server "${serverId}". ` +
-      `Retry in ${Math.round(retryAfterMs / 1000)}s.`
-    );
-    this.name = 'BreakerOpenError';
   }
 }
 
