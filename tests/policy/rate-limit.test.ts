@@ -1,5 +1,5 @@
 /**
- * Unit tests for RateLimiter — token bucket behavior, per-tool limits,
+ * Unit tests for RateLimiter - token bucket behavior, per-tool limits,
  * window refresh, and default config.
  */
 
@@ -20,31 +20,31 @@ describe('RateLimiter', () => {
 
   it('allows calls within the configured limit', () => {
     limiter.configure('github.search_repos', { requests: 3, windowSeconds: 60 });
-    expect(limiter.check('github', 'search_repos')).toBe(true);
-    expect(limiter.check('github', 'search_repos')).toBe(true);
-    expect(limiter.check('github', 'search_repos')).toBe(true);
+    expect(limiter.check('github', 'search_repos').allowed).toBe(true);
+    expect(limiter.check('github', 'search_repos').allowed).toBe(true);
+    expect(limiter.check('github', 'search_repos').allowed).toBe(true);
   });
 
   it('denies calls that exceed the limit', () => {
     limiter.configure('github.search_repos', { requests: 2, windowSeconds: 60 });
     limiter.check('github', 'search_repos');
     limiter.check('github', 'search_repos');
-    expect(limiter.check('github', 'search_repos')).toBe(false);
+    expect(limiter.check('github', 'search_repos').allowed).toBe(false);
   });
 
   it('refills tokens after the window elapses', () => {
     limiter.configure('github.search_repos', { requests: 1, windowSeconds: 10 });
     limiter.check('github', 'search_repos'); // consume
-    expect(limiter.check('github', 'search_repos')).toBe(false); // denied
+    expect(limiter.check('github', 'search_repos').allowed).toBe(false); // denied
 
     // Advance past the window
     vi.advanceTimersByTime(10_001);
-    expect(limiter.check('github', 'search_repos')).toBe(true); // refilled
+    expect(limiter.check('github', 'search_repos').allowed).toBe(true); // refilled
   });
 
   it('applies default limits to unconfigured tools', () => {
-    // Default is 60 req/min — should allow first call
-    expect(limiter.check('unknown', 'some_tool')).toBe(true);
+    // Default is 60 req/min - should allow first call
+    expect(limiter.check('unknown', 'some_tool').allowed).toBe(true);
   });
 
   it('tracks remaining tokens correctly', () => {
@@ -60,9 +60,9 @@ describe('RateLimiter', () => {
 
     limiter.check('github', 'read');
     limiter.check('github', 'read');
-    expect(limiter.check('github', 'read')).toBe(false);
+    expect(limiter.check('github', 'read').allowed).toBe(false);
 
     // write tool has its own separate bucket
-    expect(limiter.check('github', 'write')).toBe(true);
+    expect(limiter.check('github', 'write').allowed).toBe(true);
   });
 });
