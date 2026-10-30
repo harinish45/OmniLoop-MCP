@@ -8,6 +8,10 @@ import { createHash } from 'crypto';
 describe('OmniLoop CLI', () => {
   it('runs doctor successfully', async () => {
     process.env['GITHUB_TOKEN'] = 'mock-test-token';
+    process.env['MY_SECRET_ENV_VAR'] = 'mock-secret';
+    process.env['POSTGRES_MCP_URL'] = 'postgres://localhost:5432/db';
+    process.env['LEGACY_MCP_URL'] = 'http://localhost:8080/mcp';
+    process.env['OMNILOOP_PROVENANCE_KEY'] = 'mock-key';
     const code = await runCli(['doctor', '--config=config/omniloop.example.yaml']);
     expect(code).toBe(0);
   });
