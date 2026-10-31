@@ -1,6 +1,6 @@
-const assert = require('assert');
-const test = require('node:test');
-const os = require('os');
+import assert from 'node:assert';
+import test from 'node:test';
+import os from 'node:os';
 
 test('OmniLoop MCP Tool: System Metrics Retrieval', () => {
   const metrics = {
